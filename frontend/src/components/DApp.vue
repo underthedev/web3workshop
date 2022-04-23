@@ -16,6 +16,8 @@ const hasReward = ref(false)
 const accountReward = ref('')
 const fundingStage = ref(0)
 const endTime = ref(0)
+const accountInvest = ref('')
+const connected = ref(false)
 
 let contract = {}
 
@@ -24,8 +26,48 @@ watch(investAmount, async (value) => {
   rewardAmount.value = reward
 })
 
+const shortenAddress = computed(() => {
+  let pre = accountAddress.value.substring(0, 5)
+  let post = accountAddress.value.substring(accountAddress.value.length-4)
+  return pre + '...' + post
+})
+
+async function checkConnection() {
+  const installed = window.ethereum != undefined
+  if (installed) {
+    const accounts = await window.ethereum.request({method: 'eth_requestAccounts'})
+    return accounts.length > 0
+  } else {
+    return false
+  }
+}
+
+async function connect() {
+  if(await checkConnection()) {
+    console.log('connected')
+    connected.value = true
+    await fetchData()
+  }
+}
+
 async function invest() {
-  const tx = await contract.invest({value: utils.parseEther(investAmount.value)})
+  const tx = await contract.invest({value: utils.parseEther(investAmount.value), gasLimit: 14300})
+  txHash.value = tx.hash
+  await tx.wait()
+
+  window.location.reload()
+}
+
+async function claim() {
+  const tx = await contract.claim({gasLimit: 113100})
+  txHash.value = tx.hash
+  await tx.wait()
+
+  window.location.reload()
+}
+
+async function refund() {
+  const tx = await contract.refund({gasLimit: 58500})
   txHash.value = tx.hash
   await tx.wait()
 
@@ -33,11 +75,14 @@ async function invest() {
 }
 
 onMounted(async() => {
-  await window.ethereum.request({method: 'eth_requestAccounts'})
 
   window.ethereum.on('accountsChanged', () => window.location.reload())
   window.ethereum.on('chainChanged', () => window.location.reload())
 
+  connect()
+})
+
+async function fetchData() {
   const provide = new ethers.providers.Web3Provider(window.ethereum)
   const signer = await provide.getSigner()
   accountAddress.value = await signer.getAddress()
@@ -48,22 +93,32 @@ onMounted(async() => {
     signer
   )
 
+  contract.on('Invest', async () => {
+    const goalTask = contract.goal().then(res => goal.value = utils.formatEther(res))
+    const poolTask = contract.pool().then(res => pool.value = utils.formatEther(res))
+    await Promise.all([goalTask, poolTask])
+    progress.value = ((pool.value / goal.value) * 100).toPrecision(4)
+  })
+
+  contract.on('StageChange', async () => window.location.reload())
+
   contract.fundingStage().then(res => fundingStage.value = parseInt(res))
   contract.endTime().then(res => endTime.value = res * 1000)
+  contract.investOf(accountAddress.value).then(res => accountInvest.value = utils.formatEther(res))
 
   contract.rewardOf(accountAddress.value).then(res => {
     const reward = utils.formatUnits(res, 18)
     if(reward != 0) {
-    hasReward.value = true;
-    accountReward.value = reward
+      hasReward.value = true;
+      accountReward.value = reward
     }
   })
   
   const goalTask = contract.goal().then(res => goal.value = utils.formatEther(res))
   const poolTask = contract.pool().then(res => pool.value = utils.formatEther(res))
   await Promise.all([goalTask, poolTask])
-  progress.value = (pool.value / goal.value) * 100
-})
+  progress.value = ((pool.value / goal.value) * 100).toPrecision(4)
+}
 
 const style = {
   header: "max-w-7xl mx-auto sm:px-6 lg:px-8",
@@ -98,8 +153,8 @@ const style = {
             </a>
           </div>
           <div class="rounded-md shadow">
-            <button :class=style.metamaskBtn>
-              <span>{{ accountAddress }}</span>
+            <button :class=style.metamaskBtn @click="connect">
+              <span>{{ connected ? shortenAddress : 'Connect' }}</span>
             </button>
           </div>
         </div>
@@ -152,10 +207,10 @@ const style = {
                 <span class="text-gray-500">UTD</span>
               </div>
               <div v-show="fundingStage == 2" class="relative text-center">
-                <button type="button" :class=style.investBtn>Claim</button>
+                <button type="button" :class=style.investBtn @click="claim">Claim</button>
               </div>
               <div v-show="fundingStage == 3" class="relative text-right">
-                    <button title="Can refund when fail or time over" type="button" @click="refund">refund 0</button>
+                    <button title="Can refund when fail or time over" type="button" @click="refund">refund {{ accountInvest }}</button>
               </div>
             </div>
           </div>
