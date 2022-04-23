@@ -6,7 +6,7 @@
             "use": "@vercel/node"
         }
     ],
-    "rounes": [
+    "routes": [
         {
             "src": "/(.*)",
             "use": "index.js"
