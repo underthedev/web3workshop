@@ -3,6 +3,7 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { ethers, utils } from 'ethers'
 import abi from '../assets/abi.json'
 import { Countdown } from 'vue3-flip-countdown'
+import axios from 'axios'
 
 
 const accountAddress = ref('')
@@ -51,7 +52,7 @@ async function connect() {
 }
 
 async function invest() {
-  const tx = await contract.invest({value: utils.parseEther(investAmount.value), gasLimit: 14300})
+  const tx = await contract.invest({value: utils.parseEther(investAmount.value), gasLimit: 143000})
   txHash.value = tx.hash
   await tx.wait()
 
@@ -79,6 +80,13 @@ onMounted(async() => {
   window.ethereum.on('accountsChanged', () => window.location.reload())
   window.ethereum.on('chainChanged', () => window.location.reload())
 
+  axios.get('http://localhost:5000').then(res => {
+    goal.value = res.data.goal
+    pool.value = res.data.pool
+    endTime.value = res.data.endTime
+    progress.value = res.data.progress
+  })
+
   connect()
 })
 
@@ -103,7 +111,7 @@ async function fetchData() {
   contract.on('StageChange', async () => window.location.reload())
 
   contract.fundingStage().then(res => fundingStage.value = parseInt(res))
-  contract.endTime().then(res => endTime.value = res * 1000)
+  // contract.endTime().then(res => endTime.value = res * 1000)
   contract.investOf(accountAddress.value).then(res => accountInvest.value = utils.formatEther(res))
 
   contract.rewardOf(accountAddress.value).then(res => {
@@ -114,10 +122,10 @@ async function fetchData() {
     }
   })
   
-  const goalTask = contract.goal().then(res => goal.value = utils.formatEther(res))
-  const poolTask = contract.pool().then(res => pool.value = utils.formatEther(res))
-  await Promise.all([goalTask, poolTask])
-  progress.value = ((pool.value / goal.value) * 100).toPrecision(4)
+  // const goalTask = contract.goal().then(res => goal.value = utils.formatEther(res))
+  // const poolTask = contract.pool().then(res => pool.value = utils.formatEther(res))
+  // await Promise.all([goalTask, poolTask])
+  // progress.value = ((pool.value / goal.value) * 100).toPrecision(4)
 }
 
 const style = {
