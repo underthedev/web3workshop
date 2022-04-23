@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { ethers, utils } from 'ethers'
 import abi from '../assets/abi.json'
 
@@ -10,22 +10,29 @@ const pool = ref('')
 const progress = ref(0)
 const investAmount = ref('')
 const rewardAmount = ref('')
+const txHash = ref('')
+const hasReward = ref(false)
+const accountReward = ref('')
+const fundingStage = ref(0)
 
 let contract = {}
-
-watch(pool, (value) => {
-  progress.value = (pool.value / goal.value) * 100
-})
 
 watch(investAmount, async (value) => {
   const reward = await contract.calculateReward(utils.parseEther(value)).then(res => utils.formatUnits(res, 18))
   rewardAmount.value = reward
 })
 
+async function invest() {
+  const tx = await contract.invest({value: utils.parseEther(investAmount.value)})
+  txHash.value = tx.hash
+  await tx.wait()
+}
+
 onMounted(async() => {
   await window.ethereum.request({method: 'eth_requestAccounts'})
   const provide = new ethers.providers.Web3Provider(window.ethereum)
   const signer = await provide.getSigner()
+  accountAddress.value = await signer.getAddress()
 
   contract = new ethers.Contract(
     `${import.meta.env.VITE_CONTRACT_ADDRESS}`,
@@ -33,10 +40,20 @@ onMounted(async() => {
     signer
   )
 
-  goal.value = await contract.goal().then(res => utils.formatEther(res))
-  pool.value = await contract.pool().then(res => utils.formatEther(res))
+  await contract.fundingStage().then(res => fundingStage.value = parseInt(res))
 
-  accountAddress.value = await signer.getAddress()
+  await contract.rewardOf(accountAddress.value).then(res => {
+    const reward = utils.formatUnits(res, 18)
+    if(reward != 0) {
+    hasReward.value = true;
+    accountReward.value = reward
+    }
+  })
+  
+  const goalTask = contract.goal().then(res => goal.value = utils.formatEther(res))
+  const poolTask = contract.pool().then(res => pool.value = utils.formatEther(res))
+  await Promise.all([goalTask, poolTask])
+  progress.value = (pool.value / goal.value) * 100
 })
 
 const style = {
@@ -81,7 +98,7 @@ const style = {
     </header>
     <main :class=style.main>
       <div>
-        <div class="relative py-3 sm:max-w-sm sm:mx-auto">
+        <div v-show="!hasReward" class="relative py-3 sm:max-w-sm sm:mx-auto">
           <div :class=style.investBox></div>
           <div :class=style.investBoxBg>
             <div class="max-w-md mx-auto">
@@ -108,23 +125,23 @@ const style = {
               </div>
               <br />
               <div class="relative text-center">
-                <button type="button" :class=style.investBtn>Invest</button>
+                <button type="button" :class=style.investBtn @click="invest">Invest</button>
               </div>
             </div>
           </div>
         </div>
-        <div v-show="false" class="relative py-3 sm:max-w-sm sm:mx-auto">
+        <div v-show="hasReward" class="relative py-3 sm:max-w-sm sm:mx-auto">
           <div class="flex flex-col bg-white px-8 py-6 max-w-sm mx-auto rounded-lg shadow-lg">
             <div class="flex justify-center items-center font-bold text-xl">Pending Reward</div>
             <div class="mt-4">
               <div class="text-center">
-                <h1 class="text-4xl font-bold text-gray-800">0</h1>
+                <h1 class="text-4xl font-bold text-gray-800">{{ accountReward }}</h1>
                 <span class="text-gray-500">UTD</span>
               </div>
-              <div class="relative text-center">
+              <div v-show="fundingStage == 2" class="relative text-center">
                 <button type="button" :class=style.investBtn>Claim</button>
               </div>
-              <div class="relative text-right">
+              <div v-show="fundingStage == 3" class="relative text-right">
                     <button title="Can refund when fail or time over" type="button" @click="refund">refund 0</button>
               </div>
             </div>
@@ -135,7 +152,7 @@ const style = {
       <br />
 
       <div class="text-lg text-center text-gray-700 font-bold">
-        <p v-show="false" class="text-orange-500">Pending: 0x0</p>
+        <p v-show="txHash" class="text-orange-500">Pending: {{ txHash }}</p>
         <hr />
         <div>Goal: {{ goal }} ETH</div>
         <div>Pool: {{ pool }} ETH</div>

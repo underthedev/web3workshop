@@ -24,7 +24,7 @@ async function main() {
   const fundingContract = await SmartFundingContract.deploy(tokenContract.address, "0x4Cb093f226983713164A62138C3F718A5b595F73");
   await fundingContract.deployTransaction.wait(5);
   await fundingContract.deployed();
-  const tx = await fundingContract.initialize(utils.parseEther("1"), 5);
+  const tx = await fundingContract.initialize(utils.parseEther("0.1"), 5);
   await tx.wait();
 
   console.log("UTDToken deployed to:", tokenContract.address);
